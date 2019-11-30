@@ -7,13 +7,12 @@ namespace UnityEditor
 {
     //
     //  This extension allow to drag&drop subassets while pressing 'Alt'
-    // 
     //
     
     [InitializeOnLoad]
-    public static class DragAndDropSubAssetsExtension
+    public static class SubAssetDragAndDrop
     {
-        static DragAndDropSubAssetsExtension()
+        static SubAssetDragAndDrop()
         {
             EditorApplication.projectWindowItemOnGUI += OnProjectWindowItemOnGUI;
         }
@@ -33,21 +32,27 @@ namespace UnityEditor
             var targetInSources = Array.IndexOf(DragAndDrop.paths, target) != -1;
             if (targetInSources) return;
 
+            // Break - there is Unity restriction to use GameObjects as SubAssets
+            foreach (var obj in DragAndDrop.objectReferences)
+                if (obj is GameObject) return;
+
             if (Event.current.type == EventType.DragUpdated)
             {
                 DragAndDrop.visualMode = DragAndDropVisualMode.Move;
+                Event.current.Use();
             }
             else if (Event.current.type == EventType.DragPerform)
             {
-                DragAndDrop.AcceptDrag();
                 Move(DragAndDrop.objectReferences, target);
+                DragAndDrop.AcceptDrag();
+                Event.current.Use();
             }
         }
 
         private static void Move(IEnumerable<UnityEngine.Object> sources, string destinationPath)
         {
             var destinationIsFolder = AssetDatabase.IsValidFolder(destinationPath);
-            
+
             foreach (var source in sources)
             {
                 var sourceIsMain = AssetDatabase.IsMainAsset(source);
@@ -60,20 +65,7 @@ namespace UnityEditor
 
                 // Peform move assets from source file to destination
                 foreach (var asset in sourceAssets)
-                {
-                    AssetDatabase.RemoveObjectFromAsset(asset);
-
-                    if (destinationIsFolder)
-                    {
-                        var assetName = asset.name + "." + GetFileExtention(asset);
-                        var assetPath = Path.Combine(destinationPath, assetName);
-                        AssetDatabase.CreateAsset(asset, assetPath);
-                    }
-                    else
-                    {
-                        AssetDatabase.AddObjectToAsset(asset, destinationPath);
-                    }
-                }
+                    MoveAsset(asset, destinationPath);
 
                 // Remove asset file if it is empty now
                 if (sourceIsMain)
@@ -82,6 +74,64 @@ namespace UnityEditor
 
             AssetDatabase.SaveAssets();
             AssetDatabase.Refresh();
+        }
+
+        private static void MoveAsset(UnityEngine.Object asset, string destinationPath)
+        {
+            // Find hidden references (before source move)
+            var assetRefs = GetHiddenReferences(asset);
+
+            // Move asset
+            var destinationIsFolder = AssetDatabase.IsValidFolder(destinationPath);
+            if (destinationIsFolder)
+            {
+                var assetName = asset.name + "." + GetFileExtention(asset);
+                var assetPath = Path.Combine(destinationPath, assetName);
+                var assetUniquePath = AssetDatabase.GenerateUniqueAssetPath(assetPath);
+
+                AssetDatabase.RemoveObjectFromAsset(asset);
+                AssetDatabase.CreateAsset(asset, assetUniquePath);
+            }
+            else
+            {
+                AssetDatabase.RemoveObjectFromAsset(asset);
+                AssetDatabase.AddObjectToAsset(asset, destinationPath);
+            }
+            
+            // Move attached hidden references
+            foreach (var reference in assetRefs)
+            {
+                AssetDatabase.RemoveObjectFromAsset(reference);
+                AssetDatabase.AddObjectToAsset(reference, asset);
+            }
+        }
+
+        private static List<UnityEngine.Object> GetHiddenReferences(UnityEngine.Object asset, string refsPath = null, List<UnityEngine.Object> refs = null)
+        {
+            if (refsPath == null)
+                refsPath = AssetDatabase.GetAssetPath(asset);
+
+            if (refs == null)
+                refs = new List<UnityEngine.Object>();
+
+            var iterator = new SerializedObject(asset).GetIterator();
+            while (iterator.Next(true))
+            {
+                if (iterator.propertyType == SerializedPropertyType.ObjectReference)
+                {
+                    var obj = iterator.objectReferenceValue;
+                    if (obj != null && (obj.hideFlags & HideFlags.HideInHierarchy) != 0)
+                    {
+                        if (refs.IndexOf(obj) == -1 && AssetDatabase.GetAssetPath(obj) == refsPath)
+                        {
+                            refs.Add(obj);
+                            GetHiddenReferences(obj, refsPath, refs);
+                        }
+                    }
+                }
+            }
+
+            return refs;
         }
 
         /// Thanks to mob-sakai (https://github.com/mob-sakai/SubAssetEditor) for full mapping list
@@ -113,15 +163,20 @@ namespace UnityEditor
                 return "guiskin";
             else if (obj is PhysicMaterial)
                 return "physicMaterial";
+            else if (obj is PhysicsMaterial2D)
+                return "physicsMaterial2D";
             else if (obj is UnityEngine.Audio.AudioMixer)
                 return "mixer";
+            else if (obj is UnityEngine.U2D.SpriteAtlas)
+                return "spriteatlas";
             else if (obj is TextAsset)
                 return "txt";
             else if (obj is GameObject)
                 return "prefab";
             else if (obj is ScriptableObject)
                 return "asset";
-            return "";
+
+            return null;
         }
     }
 }
