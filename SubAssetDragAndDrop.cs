@@ -32,6 +32,12 @@ namespace UnityEditor
             var targetInSources = Array.IndexOf(DragAndDrop.paths, target) != -1;
             if (targetInSources) return;
 
+            // Break - unity default moving
+            var targetIsFolder = AssetDatabase.IsValidFolder(target);
+            if (targetIsFolder)
+                foreach (var asset in DragAndDrop.objectReferences)
+                    if (AssetDatabase.IsMainAsset(asset)) return;
+
             // Break - there is Unity restriction to use GameObjects as SubAssets
             foreach (var obj in DragAndDrop.objectReferences)
                 if (obj is GameObject) return;
@@ -55,10 +61,8 @@ namespace UnityEditor
 
             foreach (var source in sources)
             {
-                var sourceIsMain = AssetDatabase.IsMainAsset(source);
-                if (sourceIsMain && destinationIsFolder) continue;
-
                 var sourcePath = AssetDatabase.GetAssetPath(source);
+                var sourceIsMain = AssetDatabase.IsMainAsset(source);
                 var sourceAssets = new List<UnityEngine.Object>() { source };
                 if (sourceIsMain)
                     sourceAssets.AddRange(AssetDatabase.LoadAllAssetRepresentationsAtPath(sourcePath));
