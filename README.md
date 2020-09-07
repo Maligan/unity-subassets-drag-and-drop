@@ -12,7 +12,7 @@ Perform Drag&Drop operation in project hierarhy window while pressing `Alt` butt
 
 # License
 
-* MIT
+* [CC0](https://creativecommons.org/share-your-work/public-domain/cc0/)
 
 # Alternatives
 
